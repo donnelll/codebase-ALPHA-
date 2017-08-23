@@ -1,6 +1,5 @@
 #!/bin/bash
 #Script to get all repositories under a user from bitbucket
-#Usage: getAllRepos.sh [username]
 #source: http://haroldsoh.com/2011/10/07/clone-all-repos-from-a-bitbucket-source/
 
 # 2017-08-14 Don Lewis: Hacked up script to better parse json output since it likes to string together in one
@@ -51,4 +50,8 @@ tar --exclude getAllRepos.sh -czvf $compressedfile *
 echo "Removing all locally cloned repository directories..."
 find . -type d -exec rm -rf {} +
 
-# Here we send off the compressed file to Artifactory for storing and remove local file
+# Here we send off the compressed file to Artifactory/S3 for storing and remove local file
+# Credential file in home dir of account to be able to statically access S3 bucket
+echo "Now sending compressed archive to S3 configured bucket..."
+aws s3 cp $compressedfile s3://CAI-Bitbucket-backup
+rm -rf $compressedfile
