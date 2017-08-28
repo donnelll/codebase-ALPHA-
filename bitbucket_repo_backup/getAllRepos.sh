@@ -10,13 +10,30 @@
 today=`date '+%Y_%m_%d'`;
 repofile="repoinfo"
 compressedfile="bitbucket-repos-backup-$today.tgz"
+filerun="running.now"
+lastrunfile="last.run"
+
+export PATH="$PATH:$HOME/.local/bin:$HOME/bin"
+
+# Create lastruntime file showing last time it was executed
+touch $lastrunfile
+
+# Checking to make sure the scripts current run file doesn't exist before running
+if [ -e "$filerun" ]
+then echo "Looks like we already have a process running....exiting !"
+ exit
+fi
+
+# Create runtime file showing date/time of initial run and indicates currently running
+touch $filerun
 
 # Remove repofile from previous run if still exists from this script's cleanup procedure
-echo "Checking to make sure no previous run file exists before continuing..."
+echo "Checking to make sure no previous repo file exists before continuing..."
 if [ -e "$repofile" ]
 then
   rm -rf $repofile
 fi
+
 
 # Making API call to Bitbucket using randomly gnerated APP password for account access instead
 # of the actual account password; this provides security as the APP password has a "role"
@@ -54,4 +71,7 @@ find . -type d -exec rm -rf {} +
 # Credential file in home dir of account to be able to statically access S3 bucket
 echo "Now sending compressed archive to S3 configured bucket..."
 aws s3 cp $compressedfile s3://CAI-Bitbucket-backup
+sleep 5
 rm -rf $compressedfile
+# Remove currently running stat file.
+rm -rf $filerun
