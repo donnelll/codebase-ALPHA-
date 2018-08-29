@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Here we set some PATH's and environment variables for script execution
+PATH=$PATH:$HOME/bin:/usr:/bin:/sbin:/usr/bin:/usr/sbin:
+
+export PATH
+
+distro='tech@techdataserv.net' #Define the distro email address the change notification goes too
+ccdistro='adminonduty@techdataserv.net'
+echocmd="/bin/echo"
+CommandFile="/usr/local/nagios/var/rw/nagios.cmd"
+
+# get the current date/time in seconds since UNIX epoch
+datetimestamp=$(date +%s)
+datetime=$(date)
+
+cmdline="[$datetimestamp]"
+SVCUP="STOP_EXECUTING_SVC_CHECKS;"
+SVCDOWN="START_EXECUTING_SVC_CHECKS;"
+NOTIFON="ENABLE_NOTIFICATIONS;"
+NOTIFOFF="DISABLE_NOTIFICATIONS;"
+
+$echocmd $cmdline $SVCDOWN >> $CommandFile
+$echocmd $cmdline $NOTIFON >> $CommandFile
+
+crontab -r
+
+echo "Primary Nagios indicates down state for more than 20 minutes, assuming primary role and disabling sync..." |mail -s "Primay Nagios Down Alert" $distro -c $ccdistro
+exit

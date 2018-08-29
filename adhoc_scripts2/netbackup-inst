@@ -1,0 +1,129 @@
+#!/bin/bash
+# have to run it on RHEL related servers, 'grep -q' not working on Saloris
+uname -s | grep '^Linux$' >/dev/null 2>&1; if [ $? -ne 0 ]; then
+  echo "'$(basename $0)' has to be run on RHEL related server.";
+  exit 1;
+fi
+
+# make sure 'root' is running this script
+whoami | grep '^root$' >/dev/null 2>&1; if [ $? -ne 0 ]; then
+  echo "Please run '$(basename $0)' as 'root'";
+  exit 1;
+fi
+
+# use 'dmidecode' to check physical server
+which dmidecode >/dev/null 2>&1; if [ $? -ne 0 ]; then
+  echo "'dmidecode' not found, looks like not standard RHEL installation.";
+  exit 1;
+fi
+
+# make sure we only install it on HP and Dell physical servers, not vmware
+case $(dmidecode -s system-manufacturer) in
+  "Dell Inc.")
+	echo "This is Dell physical server, prepare for the netbackup agent installation"
+	;;
+  "HP")
+	echo "This is HP physical server, prepare for the netbackup agent installation"
+	;;
+  "VMware, Inc.")
+	echo "This is VM, no netbackup agent needed"
+	exit 1
+	;;
+  *)
+	echo "Could not figure out the system-manufacturer"
+	exit 1
+	;;
+esac
+
+# make sure it's RHEL5/6/7 2.6.18/2.6.32/3.10.0
+case $(uname -r | awk -F'-' '{print $1}') in
+  2.6.18)
+	;;
+  2.6.32)
+	;;
+  3.10.0)
+	;;
+  *)
+	echo "The Linux kernal major version is not RHEL5/6/7"
+	exit 1
+	;;
+esac
+
+# make sure /var/tmp has more than 350 MB
+# check /var/tmp is a mount point or not, if not, check /var is a mount point or not
+# if not, use /
+varmount=/
+df -P | grep "%[[:space:]][[:space:]]*/var/tmp$" >/dev/null 2>&1; if [ $? -eq 0 ]; then
+  varmount=/var/tmp
+else
+  df -P | grep "%[[:space:]][[:space:]]*/var$" >/dev/null 2>&1; if [ $? -eq 0 ]; then
+    varmount=/var
+  fi
+fi
+unused=$(df -P $varmount | grep "%[[:space:]][[:space:]]*$varmount$" | awk '{print $4}')
+# usage should be only number, and not empty
+echo $unused | grep "^[0-9][0-9]*$" >/dev/null 2>&1; if [ $? -ne 0 ]; then 
+  echo "Error: could not figure out /var/tmp mount point $varmount usage";
+  exit 1;
+fi
+if [ $unused -lt 350000 ]; then
+  echo "/var/tmp mount point $varmount is less than 350 MB, cannot hold netbackup temporary files"
+  exit 1;
+fi
+
+# make sure /usr/openv has more than 1250 MB
+# check /usr/openv is a mount point or not, if not, check /usr is a mount point or not
+# if not, use /
+openvmount=/
+df -P | grep "%[[:space:]][[:space:]]*/usr/openv$" >/dev/null 2>&1; if [ $? -eq 0 ]; then
+  openvmount=/usr/openv
+else
+  df -P | grep "%[[:space:]][[:space:]]*/usr$" >/dev/null 2>&1; if [ $? -eq 0 ]; then
+    openvmount=/usr
+  fi
+fi
+openvunused=$(df -P $openvmount | grep "%[[:space:]][[:space:]]*$openvmount$" | awk '{print $4}')
+# usage should be only number, and not empty
+echo $openvunused | grep "^[0-9][0-9]*$" >/dev/null 2>&1; if [ $? -ne 0 ]; then 
+  echo "Error: could not figure out /usr/openv mount point $openvmount usage";
+  exit 1;
+fi
+if [ $openvunused -lt 1250000 ]; then
+  echo "/usr/openv mount point $openvmount is less than 1250 MB, cannot hold netbackup files"
+  exit 1;
+fi
+
+# 'netbackup' already installed
+if [ -s /usr/openv/netbackup/bin/bpcd ]; then
+  echo "Looks like /usr/openv/netbackup/bin/bpcd is already there, you may want to do clean up first"
+  exit 1
+fi
+
+# now let's get the file and put to tmp location
+if [ ! -d /var/tmp ]; then mkdir -p /var/tmp; fi
+echo "Retrieve NetBackup Clients 7.5 package"
+wget -O - http://usg-rhn4902.autotrader.com/pub/NetBackup_7.5_CLIENTS.tar | tar -C /var/tmp -xvf -
+if [ ! -d /var/tmp/NetBackup_7.5_CLIENTS/NBClients/anb/Clients/usr/openv/netbackup/client/Linux/RedHat2.6.18 ]; then
+  echo "Error: extract NetBackup Clients 7.5 package to /var/tmp failed"
+  exit 1
+fi
+
+# begin the installation
+echo "Start to install NetBackup Client 7.5 agent at $(date)"
+/var/tmp/NetBackup_7.5_CLIENTS/install
+echo "Installation of NetBackup Client 7.5 agent ended at $(date)"
+
+# check installation
+if [ ! -x /usr/openv/netbackup/bin/bpcd ]; then
+  echo "Error: /usr/openv/netbackup/bin/bpcd not found, looks like installation not succeeded"
+fi
+
+ps aux | grep "[/]usr/openv/netbackup/bin/bpcd" >/dev/null 2>&1; if [ $? -ne 0 ]; then
+  echo "No /usr/openv/netbackup/bin/bpcd process is running; looks like installation not succeeded"
+fi
+
+# remove temporary files
+cd /var/tmp
+if [ -d /var/tmp/NetBackup_7.5_CLIENTS/ ]; then
+  rm -rf /var/tmp/NetBackup_7.5_CLIENTS/
+fi

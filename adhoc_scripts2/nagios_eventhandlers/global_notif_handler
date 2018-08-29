@@ -1,0 +1,76 @@
+#!/bin/bash
+#
+# Event handler script for turning on and off Global Notoifications dependent upon a 
+# host/service# state.
+# Note: This script can be used to enable and disable global notifications dependent upon a
+# host/service state.  Very useful for disabling global notifs when the parent of Nagios
+# cannot reach the internet, this way alerts don't spam out when Nagios can reach the
+# internet again.
+#
+#
+# Here we set some PATH's and environment variables for script execution
+PATH=$PATH:$HOME/bin:/usr:/bin:/sbin:/usr/bin:/usr/sbin:
+export PATH
+
+# Here we set various command execution variables for the script to use
+echocmd="/bin/echo"
+CommandFile="/usr/local/nagios/var/rw/nagios.cmd"
+
+# get the current date/time in seconds since UNIX epoch
+datetimestamp=$(date +%s)
+datetime=$(date)
+
+cmdline="[$datetimestamp]"
+NOTIFON="ENABLE_NOTIFICATIONS;"
+NOTIFOFF="DISABLE_NOTIFICATIONS;"
+
+# What state is the HTTP service in?
+case "$1" in
+OK)
+	# External networks are reachable again, re-enabling global notifications...
+	$echocmd $cmdline $NOTIFON >> $CommandFile
+	;;
+WARNING)
+	# We don't really care about warning states...
+	;;
+UNKNOWN)
+	# We don't know what might be causing an unknown error, so don't do anything...
+	;;
+CRITICAL)
+	# Aha!  The internet seems unreachable so we need to disable global notifs...
+	$echocmd $cmdline $NOTIFOFF >> $CommandFile
+	# Is this a "soft" or a "hard" state?
+	case "$2" in
+		
+	# We're in a "soft" state, meaning that Nagios is in the middle of retrying the
+	# check before it turns into a "hard" state and contacts get notified...
+	SOFT)
+			
+		# What check attempt are we on?  We don't want to turn global notifs off on the first
+		# check, because it may just be a fluke!
+		case "$3" in
+				
+		# Wait until the check has been tried 3 times before turning off global notifs.
+		# If the check fails on the 4th time, the state
+		# type will turn to "hard" and contacts will be notified of the problem.
+		# Hopefully this will turn off global notifs successfully, so the 4th check will
+		# result in a "soft" recovery.  If that happens no one gets notified because we
+		# fixed the problem!
+		3)
+		$echocmd $cmdline $NOTIFOFF >> $CommandFile
+			;;
+			esac
+		;;
+				
+	# Nagios was unable to reach the internet on all checks and has turned to HARD state.
+	# It should have been restarted by the code above, but for some reason it didn't.
+	# Let's give it one last try, shall we?  
+	# Note: Contacts should have already been notified of a problem via failovernagios
+	# at this point (unless you disabled notifications for this service)
+	HARD)
+		$echocmd $cmdline $NOTIFOFF >> $CommandFile
+		;;
+	esac
+	;;
+esac
+exit 0
